@@ -25,9 +25,9 @@ CONFIG = {
     "replay_capacity": int(1e4),
     "batch_size": 64,
     "learning_rate": 5e-4,
-    "epsilon": 0.3,
+    "epsilon": 0.05,
     "discount": 0.99,
-    "episodes": 100,
+    "episodes": 200,
     "max_steps": 1000,
     "target_upd_steps": 5
 }
@@ -238,6 +238,22 @@ def main():
 #    print(f"Model saved as {CHECKPOINT}")
 
 if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--batch_size', type=int, default=CONFIG['batch_size'])
+    parser.add_argument('--checkpoint', type=str, default=CONFIG['checkpoint'])
+    parser.add_argument('--discount', type=float, default=CONFIG['discount'])
+    parser.add_argument('--episodes', type=int, default=CONFIG['episodes'])
+    parser.add_argument('--epsilon', type=float, default=CONFIG['epsilon'])
+    parser.add_argument('--learning_rate', type=float, default=CONFIG['learning_rate'])
+    parser.add_argument('--max_steps', type=int, default=CONFIG['max_steps'])
+    parser.add_argument('--replay_capacity', type=int, default=CONFIG['replay_capacity'])
+    parser.add_argument('--target_upd_steps', type=int, default=CONFIG['target_upd_steps'])
+
+    args = parser.parse_args()
+    CONFIG.update(vars(args))
 
     # set random seeds for reproducibility
     # It affects only the agent code, the environment is still unpredictable
