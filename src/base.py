@@ -12,6 +12,7 @@ import gymnasium as gym
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch import tensor
 import random
 import numpy as np
 
@@ -22,23 +23,116 @@ from pprint import pprint
 CONFIG = {
     "checkpoint": "weights/baseline-dqn.pth",
     "replay_capacity": int(1e4),
-    "batch_size": 32,
-    "learning_rate": 3e-4,
-    "epsilon": 0.0,
-    "episodes": 2,
-    "max_steps": 500,
-    "max_steps": 500,
-    "target_upd_steps": 4
+    "batch_size": 64,
+    "learning_rate": 5e-4,
+    "epsilon": 0.3,
+    "discount": 0.99,
+    "episodes": 100,
+    "max_steps": 1000,
+    "target_upd_steps": 5
 }
+
+
+def sample_batch(buffer: ReplayBuffer) -> tuple[tensor, tensor, tensor, tensor, list[int]]:
+    """
+    Sample batch_size elements from the buffer and create the minibatches.
+    Since the next_states can be shorter due to the presence of the terminal
+    states, the next_states_mask gives the reference indexes of non-terminal
+    states.
+
+    For example:
+    actions[next_states_mask] are the actions that led to non-terminal states.
+
+    buffer: replay buffer. len(buffer) must be >= batch_size.
+
+    return states, actions, next_states, rewards, next_states_mask
+    """
+    global CONFIG
+    batch_size: int = CONFIG["batch_size"]
+    assert len(buffer) >= batch_size
+
+    trans: list[Transition] = buffer.sample(batch_size)
+
+    b_states = torch.vstack([t.state for t in trans])
+    assert b_states.dim() == 2
+    assert b_states.shape[0] == batch_size
+    assert b_states.shape[1] == 4
+
+    b_actions = torch.vstack([t.action for t in trans])
+    assert b_actions.dim() == 2
+    assert b_actions.shape[0] == batch_size
+    assert b_actions.shape[1] == 1
+
+    # in the cartpole, all rewards are 1
+    b_rewards = torch.vstack([t.reward for t in trans])
+    assert b_rewards.dim() == 2
+    assert b_rewards.shape[0] == batch_size
+    assert b_rewards.shape[1] == 1
+
+    # next_state can be None is case it is terminal and then it must be
+    # properly managed. The nstates_mask marks the non-terminal states
+    nstates_mask = [i for i in range(batch_size)
+                    if trans[i].next_state is not None]
+
+    # batch of next states can be shorter due to the missing terminal states
+    b_next_states = torch.vstack([t.next_state for t in trans
+                                  if t.next_state is not None])
+    assert b_next_states.dim() == 2
+    assert b_next_states.shape[0] <= batch_size
+    assert b_next_states.shape[1] == 4
+
+    return b_states, b_actions, b_next_states, b_rewards, nstates_mask
+# sample_batch
 
 def optimize_qnet(optimizer,
                   q_net:QNetwork,
                   t_net:QNetwork,
-                  buffer:ReplayBuffer) -> None:
-    pass
+                  buffer:ReplayBuffer) -> float:
+    """
+    Sample from the replay buffer and optimize the q_net.
+
+    return loss
+    """
+    global CONFIG
+    batch_size: int = CONFIG["batch_size"]
+    if len(buffer) < batch_size:
+        # wait for enough transitions to sample
+        return float('inf')
+
+    device: str = CONFIG["device"]
+    discount: float = CONFIG["discount"]
+    states, actions, nextstates, rewards, mask_lst = sample_batch(buffer)
+    mask = tensor(mask_lst, device=device)
+
+    # t_net must not be updated via SDG
+    with torch.no_grad():
+        # targets [B, 1]
+        targets = rewards
+        # t_next(next) [B,A] -> max(1) [B] -> unsqueeze(1) [B,1]
+        # q_max dim can be less then B because of terminal states
+        q_max = t_net(nextstates).max(dim=1).values.unsqueeze(1)
+        # y = r + gamma * maxQ  if nextstate is not terminal
+        # y = r                 if nextstate is terminal
+        # the mask disables the sum for the terminal states
+        targets[mask] += discount * q_max
+
+    # get Q(s,a), the policy predictions
+    # q_net(s) [B,A] -> gather [B, 1] (select the values corresponding to actions)
+    q = q_net(states).gather(1, actions)
+
+    criterion = nn.MSELoss()
+#    criterion = nn.SmoothL1Loss()
+    loss = criterion(q, targets)
+
+    # backprop
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    return loss.item()
 # optimize_qnet
 
-def behavior_policy(q_net: QNetwork, state: torch.tensor, action_dim: int) -> int:
+def behavior_policy(q_net: QNetwork, state: tensor, action_dim: int) -> int:
     """
     Select an action based on epsilon-greedy exploration method.
     return action
@@ -54,14 +148,16 @@ def behavior_policy(q_net: QNetwork, state: torch.tensor, action_dim: int) -> in
         action = random.choice(range(action_dim))
     else:
         # a = argmax Q(s,a)
-        action = q_net(state.unsqueeze(0)).max(1).indices.item()
+        with torch.no_grad():
+            action = q_net(state.unsqueeze(0)).max(1).indices.item()
 
     assert type(action) is int
     return action
 # behavior_policy
 
-def main(device: str):
+def main():
     global CONFIG
+    device: str = CONFIG["device"]
     print(f"Running on device {device}")
     # setup the environment
     env = gym.make('CartPole-v1')
@@ -85,14 +181,14 @@ def main(device: str):
                             amsgrad=True)
 
     for episode in range(CONFIG["episodes"]):
-        print(f"Start episode {episode}...")
 
         state, info = env.reset()
-        state = torch.tensor(state, dtype=torch.float32, device=device)
+        state = tensor(state, dtype=torch.float32, device=device)
 
-        finished = False
-        steps = 0      # episode steps
-        steps_tot = 0  # global number of steps, for t_net update
+        finished: bool = False
+        steps: int = 0      # episode steps
+        steps_tot: int = 0  # global number of steps, for t_net update
+        max_loss: float = 0.0
         # run an episode until the agent fails or it reaches max_steps
         while not finished:
             action: int = behavior_policy(q_net, state, action_dim)
@@ -104,27 +200,28 @@ def main(device: str):
             # None is a flag for avoiding calculating the max Q in terminal states
             next_state = None
             if not terminated:
-                next_state = torch.tensor(obs, dtype=torch.float32, device=device)
+                next_state = tensor(obs, dtype=torch.float32, device=device)
 
+            # reward as float to be used in TD target easily
             trans: Transition = Transition(state=state,
-                                           action=torch.tensor([action],
+                                           action=tensor([action],
                                                                dtype=torch.long,
                                                                device=device),
                                            next_state=next_state,
-                                           reward=torch.tensor([reward],
-                                                               dtype=torch.long,
+                                           reward=tensor([reward],
+                                                               dtype=torch.float,
                                                                device=device))
             # save in the experience replay buffer
             buffer.push(trans)
 
-            optimize_qnet(optimizer, q_net, t_net, buffer)
+            loss: float = optimize_qnet(optimizer, q_net, t_net, buffer)
+            max_loss = max(max_loss, loss)
 
             # clone Q into the target network at fixed steps interval,
             # regardless the relative position in the episode.
             steps_tot += 1
             if steps_tot % CONFIG["target_upd_steps"] == 0:
                 t_net.load_state_dict(q_net.state_dict())
-                print("Target Net updated")
 
 
             # while loop conditions
@@ -133,18 +230,14 @@ def main(device: str):
             if steps >= CONFIG["max_steps"]:
                 finished = True
         # while finished
-        print(f"Terminated episode {episode} with {steps=}")
+        print(f"Terminated episode {episode} with {steps=}, {max_loss=}")
     # for episodes
-
-    #FIXME training loop
 
 #FIXME RESTORE
 #    torch.save(q_net.state_dict(), CHECKPOINT)
 #    print(f"Model saved as {CHECKPOINT}")
 
 if __name__ == '__main__':
-    print("Hyperparameters")
-    pprint(CONFIG)
 
     # set random seeds for reproducibility
     # It affects only the agent code, the environment is still unpredictable
@@ -160,4 +253,8 @@ if __name__ == '__main__':
         "cpu"
     )
 
-    main(device)
+    print("Hyperparameters")
+    pprint(CONFIG)
+    CONFIG["device"] = device
+
+    main()
