@@ -15,6 +15,8 @@ import torch.optim as optim
 from torch import tensor
 import random
 import numpy as np
+import matplotlib.pyplot as plt
+from statistics import mean
 
 from commons import QNetwork, ReplayBuffer, Transition
 from pprint import pprint
@@ -32,6 +34,25 @@ CONFIG = {
     "target_upd_steps": 5
 }
 
+def plot_rewards(episodes: list[int], rewards: list[int], losses: list[float]) -> None:
+
+    fig, ax1 = plt.subplots()
+
+    ax1.plot(episodes, losses, 'b-', label='Loss')
+    ax1.set_xlabel("Episodes")
+    ax1.set_ylabel("Loss", color='b')
+    ax1.tick_params(axis='y', labelcolor='b')
+
+    ax2 = ax1.twinx()
+    ax2.plot(episodes, rewards, 'r-', label='Episode Lenght')
+    ax2.set_ylabel("Episode Lenght", color='r')
+    ax2.tick_params(axis='y', labelcolor='r')
+
+    plt.title("Training")
+
+#    plt.savefig("train_plot.png")
+    plt.show()
+# plot_rewards
 
 def sample_batch(buffer: ReplayBuffer) -> tuple[tensor, tensor, tensor, tensor, list[int]]:
     """
@@ -180,6 +201,10 @@ def main():
                             lr=CONFIG["learning_rate"],
                             amsgrad=True)
 
+    # plot vectors
+    episodes = []
+    episodes_rewards = []
+    episodes_losses = []
     for episode in range(CONFIG["episodes"]):
 
         state, info = env.reset()
@@ -188,7 +213,7 @@ def main():
         finished: bool = False
         steps: int = 0      # episode steps
         steps_tot: int = 0  # global number of steps, for t_net update
-        max_loss: float = 0.0
+        losses: list[float] = []
         # run an episode until the agent fails or it reaches max_steps
         while not finished:
             action: int = behavior_policy(q_net, state, action_dim)
@@ -215,7 +240,7 @@ def main():
             buffer.push(trans)
 
             loss: float = optimize_qnet(optimizer, q_net, t_net, buffer)
-            max_loss = max(max_loss, loss)
+            losses.append(loss)
 
             # clone Q into the target network at fixed steps interval,
             # regardless the relative position in the episode.
@@ -230,8 +255,15 @@ def main():
             if steps >= CONFIG["max_steps"]:
                 finished = True
         # while finished
-        print(f"Terminated episode {episode} with {steps=}, {max_loss=}")
+
+        if episode % 10 == 0:
+            loss_mean: float = mean(losses)
+            episodes.append(episode)
+            episodes_rewards.append(steps)
+            episodes_losses.append(loss_mean)
+            print(f"Terminated episode {episode} with {steps=}, {loss_mean=}")
     # for episodes
+    plot_rewards(episodes, episodes_rewards, episodes_losses)
 
 #FIXME RESTORE
 #    torch.save(q_net.state_dict(), CHECKPOINT)
