@@ -18,6 +18,7 @@ import random
 import matplotlib.pyplot as plt
 from statistics import mean
 import pandas as pd
+import numpy as np
 
 from commons import QNetwork, ReplayBuffer, Transition
 from commons import PoleLengthCurriculum, DefaultPoleLength
@@ -28,7 +29,7 @@ CONFIG = {
     "replay_capacity": int(1e5),
     "batch_size": 64,
     "learning_rate": 0.001,
-    "epsilon_start": 0.9,
+    "epsilon_start": 0.5,
     "epsilon_end": 0.01,
     "epsilon_steps": 10000,
     "discount": 0.99,
@@ -193,6 +194,7 @@ def behavior_policy(q_net: QNetwork, state: tensor, action_dim: int, steps: int)
             action = q_net(state.unsqueeze(0)).max(1).indices.item()
 
     assert type(action) is int
+    assert 0 <= action <= 1
     return action
 # behavior_policy
 
@@ -232,6 +234,8 @@ def train(pc: PoleLengthCurriculum):
     max_steps_hits: int = 0
     max_steps: int = CONFIG["max_steps"]
 
+    # force random seed for repeatibility
+    env.reset(seed=42)
     for episode in range(CONFIG["episodes"]):
 
         state, info = env.reset()
@@ -332,6 +336,7 @@ def main(pc: PoleLengthCurriculum):
     # It affects only the agent code, the environment is still unpredictable
     seed: int = 42
     random.seed(seed)
+    np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
