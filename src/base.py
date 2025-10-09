@@ -3,9 +3,8 @@ A basic implementation of DQN for cartpole.
 
 Deep Q Learning with NN with
 - target network
-- constant espilon-greedy exploration
 - replay buffer
-- epsilon decay
+- epsilon-greedy exploration with linear decay
 - early stop after 5 time hit max number of steps
 
 """
@@ -16,15 +15,16 @@ import torch.nn as nn
 import torch.optim as optim
 from torch import tensor
 import random
-import numpy as np
 import matplotlib.pyplot as plt
 from statistics import mean
+import pandas as pd
 
 from commons import QNetwork, ReplayBuffer, Transition
+from commons import PoleLengthCurriculum, DefaultPoleLength
 from pprint import pprint
 
 CONFIG = {
-    "checkpoint": "weights/baseline-dqn.pth",
+    "checkpoint": "baseline-dqn",
     "replay_capacity": int(1e5),
     "batch_size": 64,
     "learning_rate": 0.001,
@@ -38,6 +38,9 @@ CONFIG = {
 }
 
 def plot_rewards(episodes: list[int], rewards: list[int], losses: list[float]) -> None:
+    global CONFIG
+
+    checkpoint: str = CONFIG["checkpoint"]
 
     fig, ax1 = plt.subplots()
 
@@ -51,9 +54,16 @@ def plot_rewards(episodes: list[int], rewards: list[int], losses: list[float]) -
     ax2.set_ylabel("Episode Lenght", color='r')
     ax2.tick_params(axis='y', labelcolor='r')
 
-    plt.title("Training")
+    #FIXME add parameters in the title?
+    plt.title(f"{checkpoint}")
 
-#    plt.savefig("train_plot.png")
+    #FIXME visualize the pole lenghts
+
+    df = pd.DataFrame({"episode": episodes,
+                       "loss": losses,
+                       "reward": rewards})
+    df.to_csv("exports/" + checkpoint + ".csv")
+    plt.savefig("charts/" + checkpoint + ".png")
     plt.show()
 # plot_rewards
 
@@ -131,7 +141,7 @@ def optimize_qnet(optimizer,
     # t_net must not be updated via SDG
     with torch.no_grad():
         # targets [B, 1]
-        targets = rewards
+        targets = rewards.clone()
         # t_next(next) [B,A] -> max(1) [B] -> unsqueeze(1) [B,1]
         # q_max dim can be less then B because of terminal states
         q_max = t_net(nextstates).max(dim=1).values.unsqueeze(1)
@@ -145,7 +155,6 @@ def optimize_qnet(optimizer,
     q = q_net(states).gather(1, actions)
 
     criterion = nn.MSELoss()
-#    criterion = nn.SmoothL1Loss()
     loss = criterion(q, targets)
 
     # backprop
@@ -187,21 +196,19 @@ def behavior_policy(q_net: QNetwork, state: tensor, action_dim: int, steps: int)
     return action
 # behavior_policy
 
-def main():
+def train(pc: PoleLengthCurriculum):
     global CONFIG
     device: str = CONFIG["device"]
     print(f"Running on device {device}")
+    print("Curriculum: ", type(pc))
     # setup the environment
     env = gym.make('CartPole-v1')
     #env = gym.make('CartPole-v1', render_mode="human")
     state_dim: int = env.observation_space.shape[0]
     action_dim: int = env.action_space.n
-    pole_len: float = env.unwrapped.length
 
     assert state_dim == 4
     assert action_dim == 2
-
-    print(f"Pole length: {pole_len}")
 
     # Init the experience replay buffer
     buffer = ReplayBuffer(capacity=CONFIG["replay_capacity"])
@@ -236,6 +243,7 @@ def main():
         # run an episode until the agent fails or it reaches max_steps
         while not finished:
             action: int = behavior_policy(q_net, state, action_dim, steps_tot)
+            pc.set_pole_length(env, episode, steps, steps_tot)
             obs, reward, terminated, *_ = env.step(action)
             # truncated is not taken into account in this setup
             finished = terminated
@@ -288,18 +296,20 @@ def main():
         else:
             max_steps_hits = 0
 
-        if max_steps_hits >= 5:
+        if max_steps_hits >= 10:
             print(f"Early stop: reached {max_steps_hits} times {max_steps} steps")
             break
     # for episodes
     plot_rewards(episodes, episodes_rewards, episodes_losses)
 
-    checkpoint: str = CONFIG["checkpoint"]
+    checkpoint: str = "weights/" + CONFIG["checkpoint"] + ".pth"
     torch.save(q_net.state_dict(), checkpoint)
     print(f"Model saved as {checkpoint}")
 
-if __name__ == '__main__':
+
+def main(pc: PoleLengthCurriculum):
     import argparse
+    import os
 
     parser = argparse.ArgumentParser()
 
@@ -325,6 +335,11 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
+    # create the output directories
+    os.makedirs("exports", exist_ok=True)
+    os.makedirs("charts", exist_ok=True)
+    os.makedirs("weights", exist_ok=True)
+
     # if GPU is to be used
     device = torch.device(
         "cuda" if torch.cuda.is_available() else
@@ -333,7 +348,14 @@ if __name__ == '__main__':
     )
 
     print("Hyperparameters")
-    pprint(CONFIG)
     CONFIG["device"] = device
+    CONFIG["curriculum"] = str(type(pc))
+    pprint(CONFIG)
+    with open(f"exports/{CONFIG['checkpoint']}.json", "w") as f:
+        pprint(CONFIG, stream=f)
 
-    main()
+    train(pc)
+
+if __name__ == '__main__':
+    pc = DefaultPoleLength()
+    main(pc)

@@ -4,6 +4,7 @@ Common parts to use in the different training setups
 import torch
 import torch.nn as nn
 from collections import namedtuple, deque
+from abc import ABC, abstractmethod
 import random
 
 # Inspired by
@@ -56,3 +57,29 @@ class ReplayBuffer():
 
     def __len__(self):
         return len(self.buffer)
+
+
+class PoleLengthCurriculum(ABC):
+    """
+    Abstract class for scheduling the pole lenght in the cartpole environment
+    """
+
+    @abstractmethod
+    def set_pole_length(self, env, episode: int, esteps: int, tsteps: int) -> float:
+        """
+        Set the pole lenght in the environment.
+
+        episode: the current episode number.
+        esteps: the current number of steps in the current episode
+        tstesp: the cummulative number of steps among the episodes
+
+        return the pole lenght
+        """
+        pass
+
+class DefaultPoleLength(PoleLengthCurriculum):
+
+    def set_pole_length(self, env, episode: int, esteps: int, tsteps: int) -> float:
+        pole_len: float = env.unwrapped.length
+        return pole_len
+
