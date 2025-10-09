@@ -5,6 +5,8 @@ Deep Q Learning with NN with
 - target network
 - constant espilon-greedy exploration
 - replay buffer
+- epsilon decay
+- early stop after 5 time hit max number of steps
 
 """
 
@@ -21,17 +23,18 @@ from statistics import mean
 from commons import QNetwork, ReplayBuffer, Transition
 from pprint import pprint
 
-#FIXME use the literature or references for the hyperparameters values
 CONFIG = {
     "checkpoint": "weights/baseline-dqn.pth",
-    "replay_capacity": int(1e4),
+    "replay_capacity": int(1e5),
     "batch_size": 64,
-    "learning_rate": 5e-4,
-    "epsilon": 0.05,
+    "learning_rate": 0.001,
+    "epsilon_start": 0.9,
+    "epsilon_end": 0.01,
+    "epsilon_steps": 10000,
     "discount": 0.99,
-    "episodes": 200,
+    "episodes": 300,
     "max_steps": 1000,
-    "target_upd_steps": 5
+    "target_upd_steps": 10
 }
 
 def plot_rewards(episodes: list[int], rewards: list[int], losses: list[float]) -> None:
@@ -153,9 +156,10 @@ def optimize_qnet(optimizer,
     return loss.item()
 # optimize_qnet
 
-def behavior_policy(q_net: QNetwork, state: tensor, action_dim: int) -> int:
+def behavior_policy(q_net: QNetwork, state: tensor, action_dim: int, steps: int) -> int:
     """
     Select an action based on epsilon-greedy exploration method.
+    Decay based on steps.
     return action
     """
     global CONFIG
@@ -164,7 +168,14 @@ def behavior_policy(q_net: QNetwork, state: tensor, action_dim: int) -> int:
     action: int = 0
     p: float = random.random()
 
-    if p < CONFIG["epsilon"]:
+    # epsilon decay
+    e_start: float = CONFIG["epsilon_start"]
+    e_end: float = CONFIG["epsilon_end"]
+    e_steps: int = CONFIG["epsilon_steps"]
+    slope: float = (e_end - e_start ) / e_steps
+    epsilon: float = max(e_end, steps * slope + e_start)
+
+    if p < epsilon:
         # a ~ A
         action = random.choice(range(action_dim))
     else:
@@ -205,6 +216,12 @@ def main():
     episodes = []
     episodes_rewards = []
     episodes_losses = []
+    # global number of steps, for t_net update
+    steps_tot: int = 0
+    # count how many consecutive times the agent reach the "max_step"
+    max_steps_hits: int = 0
+    max_steps: int = CONFIG["max_steps"]
+
     for episode in range(CONFIG["episodes"]):
 
         state, info = env.reset()
@@ -212,11 +229,10 @@ def main():
 
         finished: bool = False
         steps: int = 0      # episode steps
-        steps_tot: int = 0  # global number of steps, for t_net update
         losses: list[float] = []
         # run an episode until the agent fails or it reaches max_steps
         while not finished:
-            action: int = behavior_policy(q_net, state, action_dim)
+            action: int = behavior_policy(q_net, state, action_dim, steps_tot)
             obs, reward, terminated, *_ = env.step(action)
             # truncated is not taken into account in this setup
             finished = terminated
@@ -252,22 +268,32 @@ def main():
             # while loop conditions
             state = next_state
             steps += 1
-            if steps >= CONFIG["max_steps"]:
+            if steps >= max_steps:
                 finished = True
         # while finished
 
-        if episode % 10 == 0:
-            loss_mean: float = mean(losses)
-            episodes.append(episode)
-            episodes_rewards.append(steps)
-            episodes_losses.append(loss_mean)
-            print(f"Terminated episode {episode} with {steps=}, {loss_mean=}")
+        # plot one episode information, not aggregation
+        loss_mean: float = mean(losses)
+        episodes.append(episode)
+        episodes_rewards.append(steps)
+        episodes_losses.append(loss_mean)
+        print(f"Episode {episode}, {steps=}, {steps_tot=}, {loss_mean=:.04f} ")
+
+        # manage the counter at episode level
+        if steps >= max_steps:
+            max_steps_hits += 1
+        else:
+            max_steps_hits = 0
+
+        if max_steps_hits >= 5:
+            print(f"Early stop: reached {max_steps_hits} times {max_steps} steps")
+            break
     # for episodes
     plot_rewards(episodes, episodes_rewards, episodes_losses)
 
-#FIXME RESTORE
-#    torch.save(q_net.state_dict(), CHECKPOINT)
-#    print(f"Model saved as {CHECKPOINT}")
+    checkpoint: str = CONFIG["checkpoint"]
+    torch.save(q_net.state_dict(), checkpoint)
+    print(f"Model saved as {checkpoint}")
 
 if __name__ == '__main__':
     import argparse
@@ -278,7 +304,9 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint', type=str, default=CONFIG['checkpoint'])
     parser.add_argument('--discount', type=float, default=CONFIG['discount'])
     parser.add_argument('--episodes', type=int, default=CONFIG['episodes'])
-    parser.add_argument('--epsilon', type=float, default=CONFIG['epsilon'])
+    parser.add_argument('--epsilon_start', type=float, default=CONFIG['epsilon_start'])
+    parser.add_argument('--epsilon_end', type=float, default=CONFIG['epsilon_end'])
+    parser.add_argument('--epsilon_steps', type=float, default=CONFIG['epsilon_steps'])
     parser.add_argument('--learning_rate', type=float, default=CONFIG['learning_rate'])
     parser.add_argument('--max_steps', type=int, default=CONFIG['max_steps'])
     parser.add_argument('--replay_capacity', type=int, default=CONFIG['replay_capacity'])
