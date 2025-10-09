@@ -19,13 +19,22 @@ Or with GPU
 pip install -r requirements.txt -r requirements-gpu.txt
 ```
 
-## Run the Test
+## Train the DQN
 
 From the project root directory, create the network weights
 
 ```
-python src/base.py
+python -O src/base.py
 ```
+
+To run a custom training, use the cli flags. The list of parameters can be
+obtained with the help.
+
+```
+python src/base.py --help
+```
+
+## Run the Test
 
 Run the test script
 

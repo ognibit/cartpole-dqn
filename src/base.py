@@ -194,11 +194,14 @@ def main():
     # setup the environment
     env = gym.make('CartPole-v1')
     #env = gym.make('CartPole-v1', render_mode="human")
-    state_dim = env.observation_space.shape[0]
-    action_dim = env.action_space.n
+    state_dim: int = env.observation_space.shape[0]
+    action_dim: int = env.action_space.n
+    pole_len: float = env.unwrapped.length
 
     assert state_dim == 4
     assert action_dim == 2
+
+    print(f"Pole length: {pole_len}")
 
     # Init the experience replay buffer
     buffer = ReplayBuffer(capacity=CONFIG["replay_capacity"])
