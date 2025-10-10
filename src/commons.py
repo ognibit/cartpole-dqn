@@ -65,13 +65,11 @@ class PoleLengthCurriculum(ABC):
     """
 
     @abstractmethod
-    def set_pole_length(self, env, episode: int, esteps: int, tsteps: int) -> float:
+    def set_pole_length(self, env, episode: int) -> float:
         """
-        Set the pole lenght in the environment.
+        Set the pole lenght in the environment at beginning of the episode.
 
         episode: the current episode number.
-        esteps: the current number of steps in the current episode
-        tstesp: the cummulative number of steps among the episodes
 
         return the pole lenght
         """
@@ -79,7 +77,7 @@ class PoleLengthCurriculum(ABC):
 
 class DefaultPoleLength(PoleLengthCurriculum):
 
-    def set_pole_length(self, env, episode: int, esteps: int, tsteps: int) -> float:
+    def set_pole_length(self, env, episode: int) -> float:
         pole_len: float = env.unwrapped.length
         return pole_len
 

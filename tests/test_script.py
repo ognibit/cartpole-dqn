@@ -97,8 +97,10 @@ def test_script():
     results = {}
     total_score = 0
 
+    i = 1
     for length in pole_lengths:
-        print(length)
+        print(length, i)
+        i += 1
 
         pole_score = []
 

@@ -4,7 +4,7 @@ A basic implementation of DQN for cartpole.
 Deep Q Learning with NN with
 - target network
 - replay buffer
-- epsilon-greedy exploration with linear decay
+- epsilon-greedy exploration with constant espilon
 - early stop after 5 time hit max number of steps
 
 """
@@ -26,41 +26,44 @@ from pprint import pprint
 
 CONFIG = {
     "checkpoint": "baseline-dqn",
-    "replay_capacity": int(1e5),
-    "batch_size": 64,
+    "replay_capacity": 200_000,
+    "batch_size": 128,
     "learning_rate": 0.001,
-    "epsilon_start": 0.5,
-    "epsilon_end": 0.01,
-    "epsilon_steps": 10000,
+    "epsilon": 0.3,
     "discount": 0.99,
     "episodes": 300,
     "max_steps": 1000,
     "target_upd_steps": 10
 }
 
-def plot_rewards(episodes: list[int], rewards: list[int], losses: list[float]) -> None:
+def plot_rewards(episodes: list[int], rewards: list[int],
+                 losses: list[float], lengths: list[float]) -> None:
     global CONFIG
 
     checkpoint: str = CONFIG["checkpoint"]
 
     fig, ax1 = plt.subplots()
 
-    ax1.plot(episodes, losses, 'b-', label='Loss')
+#    ax1.plot(episodes, losses, 'b-', label='Loss')
+#    ax1.set_xlabel("Episodes")
+#    ax1.set_ylabel("Loss", color='b')
+#    ax1.tick_params(axis='y', labelcolor='b')
+
+    ax1.plot(episodes, lengths, 'b-', label='Pole Length')
     ax1.set_xlabel("Episodes")
-    ax1.set_ylabel("Loss", color='b')
+    ax1.set_ylabel("Pole Lengths", color='b')
     ax1.tick_params(axis='y', labelcolor='b')
 
     ax2 = ax1.twinx()
-    ax2.plot(episodes, rewards, 'r-', label='Episode Lenght')
-    ax2.set_ylabel("Episode Lenght", color='r')
+    ax2.plot(episodes, rewards, 'r-', label='Episode Length')
+    ax2.set_ylabel("Episode Length", color='r')
     ax2.tick_params(axis='y', labelcolor='r')
 
     #FIXME add parameters in the title?
     plt.title(f"{checkpoint}")
 
-    #FIXME visualize the pole lenghts
-
     df = pd.DataFrame({"episode": episodes,
+                       "poleLen": lengths,
                        "loss": losses,
                        "reward": rewards})
     df.to_csv("exports/" + checkpoint + ".csv")
@@ -169,7 +172,6 @@ def optimize_qnet(optimizer,
 def behavior_policy(q_net: QNetwork, state: tensor, action_dim: int, steps: int) -> int:
     """
     Select an action based on epsilon-greedy exploration method.
-    Decay based on steps.
     return action
     """
     global CONFIG
@@ -178,12 +180,7 @@ def behavior_policy(q_net: QNetwork, state: tensor, action_dim: int, steps: int)
     action: int = 0
     p: float = random.random()
 
-    # epsilon decay
-    e_start: float = CONFIG["epsilon_start"]
-    e_end: float = CONFIG["epsilon_end"]
-    e_steps: int = CONFIG["epsilon_steps"]
-    slope: float = (e_end - e_start ) / e_steps
-    epsilon: float = max(e_end, steps * slope + e_start)
+    epsilon: float = CONFIG["epsilon"]
 
     if p < epsilon:
         # a ~ A
@@ -228,10 +225,10 @@ def train(pc: PoleLengthCurriculum):
     episodes = []
     episodes_rewards = []
     episodes_losses = []
+    episodes_lengths = []
     # global number of steps, for t_net update
     steps_tot: int = 0
     # count how many consecutive times the agent reach the "max_step"
-    max_steps_hits: int = 0
     max_steps: int = CONFIG["max_steps"]
 
     # force random seed for repeatibility
@@ -239,6 +236,9 @@ def train(pc: PoleLengthCurriculum):
     for episode in range(CONFIG["episodes"]):
 
         state, info = env.reset()
+        pole_len: float = pc.set_pole_length(env, episode)
+        episodes_lengths.append(pole_len)
+
         state = tensor(state, dtype=torch.float32, device=device)
 
         finished: bool = False
@@ -247,7 +247,6 @@ def train(pc: PoleLengthCurriculum):
         # run an episode until the agent fails or it reaches max_steps
         while not finished:
             action: int = behavior_policy(q_net, state, action_dim, steps_tot)
-            pc.set_pole_length(env, episode, steps, steps_tot)
             obs, reward, terminated, *_ = env.step(action)
             # truncated is not taken into account in this setup
             finished = terminated
@@ -292,19 +291,10 @@ def train(pc: PoleLengthCurriculum):
         episodes.append(episode)
         episodes_rewards.append(steps)
         episodes_losses.append(loss_mean)
-        print(f"Episode {episode}, {steps=}, {steps_tot=}, {loss_mean=:.04f} ")
+        print(f"Episode {episode}[len: {pole_len:.04f}], {steps=}, {steps_tot=}, {loss_mean=:.04f} ")
 
-        # manage the counter at episode level
-        if steps >= max_steps:
-            max_steps_hits += 1
-        else:
-            max_steps_hits = 0
-
-        if max_steps_hits >= 10:
-            print(f"Early stop: reached {max_steps_hits} times {max_steps} steps")
-            break
     # for episodes
-    plot_rewards(episodes, episodes_rewards, episodes_losses)
+    plot_rewards(episodes, episodes_rewards, episodes_losses, episodes_lengths)
 
     checkpoint: str = "weights/" + CONFIG["checkpoint"] + ".pth"
     torch.save(q_net.state_dict(), checkpoint)
@@ -321,9 +311,7 @@ def main(pc: PoleLengthCurriculum):
     parser.add_argument('--checkpoint', type=str, default=CONFIG['checkpoint'])
     parser.add_argument('--discount', type=float, default=CONFIG['discount'])
     parser.add_argument('--episodes', type=int, default=CONFIG['episodes'])
-    parser.add_argument('--epsilon_start', type=float, default=CONFIG['epsilon_start'])
-    parser.add_argument('--epsilon_end', type=float, default=CONFIG['epsilon_end'])
-    parser.add_argument('--epsilon_steps', type=float, default=CONFIG['epsilon_steps'])
+    parser.add_argument('--epsilon', type=float, default=CONFIG['epsilon'])
     parser.add_argument('--learning_rate', type=float, default=CONFIG['learning_rate'])
     parser.add_argument('--max_steps', type=int, default=CONFIG['max_steps'])
     parser.add_argument('--replay_capacity', type=int, default=CONFIG['replay_capacity'])
