@@ -24,7 +24,9 @@ pip install -r requirements.txt -r requirements-gpu.txt
 From the project root directory, create the network weights
 
 ```
-python -O src/base.py
+python -O src/uniform.py
+python -O src/short-long.py
+python -O src/long-short.py
 ```
 
 To run a custom training, use the cli flags. The list of parameters can be
@@ -36,9 +38,10 @@ python src/base.py --help
 
 ## Run the Test
 
-Run the test script
+Run the test script for a specific network (in the example, `uniform`)
 
 ```
+cp weights/uniform-dqn.pth weights/dqn.pth
 python tests/test_script.py
 ```
 

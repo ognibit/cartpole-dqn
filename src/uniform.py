@@ -9,7 +9,7 @@ from random import uniform
 class UniformPoleLength(PoleLengthCurriculum):
 
     def set_pole_length(self, env, steps_tot: int) -> float:
-        pole_len: float = uniform(0.4, 1.8)
+        pole_len: float = 1.1
         env.unwrapped.length = pole_len
         return pole_len
 
