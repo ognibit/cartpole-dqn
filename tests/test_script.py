@@ -97,10 +97,15 @@ def test_script():
     results = {}
     total_score = 0
 
+    # detailed data
+    df_lengths = []
+    df_steps = []
+
     i = 1
     for length in pole_lengths:
         print(length, i)
         i += 1
+
 
         pole_score = []
 
@@ -119,8 +124,12 @@ def test_script():
             score = test_pole_length(env, loaded_model)
             pole_score.append(score)
 
-        mean_score = np.mean(np.array(pole_score))
-        std_score = np.std(np.array(pole_score))
+            df_lengths.append(length)
+            df_steps.append(score)
+
+        scores = np.array(pole_score)
+        mean_score = np.mean(scores)
+        std_score = np.std(scores)
 
         total_score += mean_score
 
@@ -135,6 +144,10 @@ def test_script():
     # Convert list to DataFrame
     df = pd.DataFrame(all_results)
     df.to_excel("experiment_results.xlsx", index=False)
+
+    # Save details
+    det = pd.DataFrame({"length": df_lengths, "steps": df_steps})
+    det.to_csv("experiment_details.csv")
 
 if __name__ == "__main__":
     test_script()

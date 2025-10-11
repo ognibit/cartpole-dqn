@@ -31,8 +31,9 @@ CONFIG = {
     "learning_rate": 0.001,
     "epsilon": 0.3,
     "discount": 0.99,
-    "episodes": 300,
-    "max_steps": 1000,
+    "episodes": 300, # FIXME deprecated
+    "tot_steps": 120_000, # total steps for the training
+    "max_steps": 1000,    # maximum steps for one episode
     "target_upd_steps": 10
 }
 
@@ -233,10 +234,11 @@ def train(pc: PoleLengthCurriculum):
 
     # force random seed for repeatibility
     env.reset(seed=42)
-    for episode in range(CONFIG["episodes"]):
+    episode: int = 0
+    while steps_tot < CONFIG["tot_steps"]:
 
         state, info = env.reset()
-        pole_len: float = pc.set_pole_length(env, episode)
+        pole_len: float = pc.set_pole_length(env, steps_tot)
         episodes_lengths.append(pole_len)
 
         state = tensor(state, dtype=torch.float32, device=device)
@@ -293,7 +295,9 @@ def train(pc: PoleLengthCurriculum):
         episodes_losses.append(loss_mean)
         print(f"Episode {episode}[len: {pole_len:.04f}], {steps=}, {steps_tot=}, {loss_mean=:.04f} ")
 
+        episode += 1
     # for episodes
+
     plot_rewards(episodes, episodes_rewards, episodes_losses, episodes_lengths)
 
     checkpoint: str = "weights/" + CONFIG["checkpoint"] + ".pth"
@@ -311,6 +315,7 @@ def main(pc: PoleLengthCurriculum):
     parser.add_argument('--checkpoint', type=str, default=CONFIG['checkpoint'])
     parser.add_argument('--discount', type=float, default=CONFIG['discount'])
     parser.add_argument('--episodes', type=int, default=CONFIG['episodes'])
+    parser.add_argument('--tot_steps', type=int, default=CONFIG['tot_steps'])
     parser.add_argument('--epsilon', type=float, default=CONFIG['epsilon'])
     parser.add_argument('--learning_rate', type=float, default=CONFIG['learning_rate'])
     parser.add_argument('--max_steps', type=int, default=CONFIG['max_steps'])

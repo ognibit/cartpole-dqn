@@ -8,13 +8,13 @@ from random import uniform
 
 class ShortPoleLength(PoleLengthCurriculum):
 
-    def set_pole_length(self, env, episode: int) -> float:
+    def set_pole_length(self, env, steps_tot: int) -> float:
         pole_len: float = 0.5 # in case of longer trainig
-        if episode < 100:
+        if steps_tot < 40_000:
             pole_len = uniform(0.4, 0.9)
-        elif episode < 200:
+        elif steps_tot < 80_000:
             pole_len = uniform(0.91, 1.3)
-        elif episode < 300:
+        elif steps_tot < 120_000:
             # full range
             pole_len = uniform(0.4, 1.8)
 
