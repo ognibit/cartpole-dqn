@@ -13,10 +13,9 @@ class LongPoleLength(PoleLengthCurriculum):
         if steps_tot < 40_000:
             pole_len = uniform(1.31, 1.8)
         elif steps_tot < 80_000:
-            pole_len = uniform(0.9, 1.3)
+            pole_len = uniform(0.91, 1.3)
         elif steps_tot < 120_000:
-            # full range
-            pole_len = uniform(0.4, 1.8)
+            pole_len = uniform(0.4, 0.9)
 
         env.unwrapped.length = pole_len
         return pole_len
