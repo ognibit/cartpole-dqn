@@ -31,7 +31,6 @@ CONFIG = {
     "learning_rate": 0.001,
     "epsilon": 0.3,
     "discount": 0.99,
-    "episodes": 300, # FIXME deprecated
     "tot_steps": 120_000, # total steps for the training
     "max_steps": 1000,    # maximum steps for one episode
     "target_upd_steps": 10
@@ -60,7 +59,6 @@ def plot_rewards(episodes: list[int], rewards: list[int],
     ax2.set_ylabel("Episode Length", color='r')
     ax2.tick_params(axis='y', labelcolor='r')
 
-    #FIXME add parameters in the title?
     plt.title(f"{checkpoint}")
 
     df = pd.DataFrame({"episode": episodes,
